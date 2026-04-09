@@ -1,6 +1,6 @@
-#!/opt/sipmon/bin/python3
+#!/opt/octosip/bin/python3
 """
-sipmon_parser.py — Reads Kamailio logs from stdin (rsyslog omprog), resolves GeoIP and ASN, and inserts them into PostgreSQL.
+octosip_parser.py — Reads Kamailio logs from stdin (rsyslog omprog), resolves GeoIP and ASN, and inserts them into PostgreSQL.
 Flush: every 10 messages OR every 5 seconds (whichever comes first).
 """
 
@@ -9,7 +9,7 @@ import psycopg2, psycopg2.extras
 import geoip2.database
 
 # --- Config ---
-def load_config(path='/opt/sipmon/config.conf'):
+def load_config(path='/opt/octosip/config.conf'):
     cfg = {}
     try:
         with open(path) as f:
@@ -25,11 +25,11 @@ def load_config(path='/opt/sipmon/config.conf'):
 cfg = load_config()
 
 DB_DSN         = "host=127.0.0.1 port=5432 dbname={} user={} password={}".format(
-                    cfg.get('DB_NAME', 'sipmon'),
-                    cfg.get('DB_USER', 'sipmon'),
+                    cfg.get('DB_NAME', 'octosip'),
+                    cfg.get('DB_USER', 'octosip'),
                     cfg.get('DB_PASSWORD', ''))
-GEOIP_DB       = "/opt/sipmon/geoip/GeoLite2-City.mmdb"
-GEOIP_ASN_DB   = "/opt/sipmon/geoip/GeoLite2-ASN.mmdb"
+GEOIP_DB       = "/opt/octosip/geoip/GeoLite2-City.mmdb"
+GEOIP_ASN_DB   = "/opt/octosip/geoip/GeoLite2-ASN.mmdb"
 BATCH_SIZE     = 10
 FLUSH_INTERVAL = 5
 
@@ -53,9 +53,9 @@ RE_PIKE = re.compile(
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
-    handlers=[logging.FileHandler('/var/log/sipmon_parser.log')]
+    handlers=[logging.FileHandler('/var/log/octosip_parser.log')]
 )
-log = logging.getLogger('sipmon')
+log = logging.getLogger('octosip')
 
 INSERT_SQL = """
     INSERT INTO sip_events

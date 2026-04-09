@@ -14,8 +14,8 @@ A real-time SIP attack monitoring system built on Kamailio. Captures and visuali
 - A REST API exposes statistics, top attackers, IOC exports and more
 
 ## Screenshots
-
-<img src="[https://user-images.githubusercontent.com/link-to-your-image.png](https://github.com/tomgilabert/octosip/blob/main/octosip.png)" width="200" />
+<img src="https://github.com/tomgilabert/octosip/blob/main/octosip.png" width="100" height="100"/>
+<img src="https://github.com/tomgilabert/octosip/blob/main/octosip.png" width="200" />
 
 
 ![OctoSIP Honeypot WebPanel](https://github.com/tomgilabert/octosip/blob/main/octosip.png | width=100)

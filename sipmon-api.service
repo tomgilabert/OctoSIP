@@ -1,0 +1,14 @@
+[Unit]
+Description=OctoSIP Monitor API
+After=network.target postgresql.service
+
+[Service]
+ExecStart=/opt/sipmon/bin/python3 /opt/sipmon/sipmon_api.py
+Restart=always
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

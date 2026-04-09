@@ -50,7 +50,8 @@ apt-get install -y -qq \
     python3 python3-venv python3-pip \
     rsyslog \
     curl wget tar \
-    logrotate
+    logrotate \
+    sudo
 
 # =============================================================================
 # 2. Time zone

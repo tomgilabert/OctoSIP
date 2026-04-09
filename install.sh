@@ -102,36 +102,36 @@ info "PostgreSQL configured"
 # =============================================================================
 # 4. Python environment
 # =============================================================================
-info "Creating Python environment in /opt/sipmon..."
-mkdir -p /opt/sipmon/geoip /opt/sipmon/www
+info "Creating Python environment in /opt/octosip..."
+mkdir -p /opt/octosip/geoip /opt/octosip/www
 
-python3 -m venv /opt/sipmon
-/opt/sipmon/bin/pip install -q --upgrade pip
-/opt/sipmon/bin/pip install -q psycopg2-binary geoip2 flask flask-cors
+python3 -m venv /opt/octosip
+/opt/octosip/bin/pip install -q --upgrade pip
+/opt/octosip/bin/pip install -q psycopg2-binary geoip2 flask flask-cors
 
 # =============================================================================
 # 5. Copying files
 # =============================================================================
 info "Copying application files..."
-cp "$SCRIPT_DIR/config.conf"       /opt/sipmon/config.conf
-cp "$SCRIPT_DIR/sipmon_parser.py"  /opt/sipmon/sipmon_parser.py
-cp "$SCRIPT_DIR/sipmon_api.py"     /opt/sipmon/sipmon_api.py
-cp "$SCRIPT_DIR/purge_old_events.sh" /opt/sipmon/purge_old_events.sh
-cp "$SCRIPT_DIR/update_geoip.sh"   /opt/sipmon/update_geoip.sh
+cp "$SCRIPT_DIR/config.conf"       /opt/octosip/config.conf
+cp "$SCRIPT_DIR/octosip_parser.py"  /opt/octosip/octosip_parser.py
+cp "$SCRIPT_DIR/octosip_api.py"     /opt/octosip/octosip_api.py
+cp "$SCRIPT_DIR/purge_old_events.sh" /opt/octosip/purge_old_events.sh
+cp "$SCRIPT_DIR/update_geoip.sh"   /opt/octosip/update_geoip.sh
 
-chmod +x /opt/sipmon/sipmon_parser.py
-chmod +x /opt/sipmon/sipmon_api.py
-chmod +x /opt/sipmon/purge_old_events.sh
-chmod +x /opt/sipmon/update_geoip.sh
+chmod +x /opt/octosip/octosip_parser.py
+chmod +x /opt/octosip/octosip_api.py
+chmod +x /opt/octosip/purge_old_events.sh
+chmod +x /opt/octosip/update_geoip.sh
 
 # Replace IP in index.html
-sed "s|SIPMON_SERVER_IP|$SERVER_IP|g" "$SCRIPT_DIR/index.html" > /opt/sipmon/www/index.html
+sed "s|octosip_SERVER_IP|$SERVER_IP|g" "$SCRIPT_DIR/index.html" > /opt/octosip/www/index.html
 
 # =============================================================================
 # 6. GeoIP
 # =============================================================================
 info "Downloading GeoIP databases..."
-cd /opt/sipmon/geoip
+cd /opt/octosip/geoip
 for DB in GeoLite2-City GeoLite2-ASN; do
     curl -fsSL -u "$MAXMIND_ACCOUNT_ID:$MAXMIND_LICENSE_KEY" \
         "https://download.maxmind.com/geoip/databases/$DB/download?suffix=tar.gz" \
@@ -167,19 +167,19 @@ info "rsyslog configured"
 # 9. Systemd services
 # =============================================================================
 info "Installing systemd services..."
-cp "$SCRIPT_DIR/sipmon-api.service" /etc/systemd/system/sipmon-api.service
-cp "$SCRIPT_DIR/sipmon-web.service" /etc/systemd/system/sipmon-web.service
+cp "$SCRIPT_DIR/octosip-api.service" /etc/systemd/system/octosip-api.service
+cp "$SCRIPT_DIR/octosip-web.service" /etc/systemd/system/octosip-web.service
 
 systemctl daemon-reload
-systemctl enable sipmon-api sipmon-web
-systemctl restart sipmon-api sipmon-web
+systemctl enable octosip-api octosip-web
+systemctl restart octosip-api octosip-web
 info "Services started"
 
 # =============================================================================
 # 10. Logrotate
 # =============================================================================
 info "Configuring logrotate..."
-cat > /etc/logrotate.d/sipmon << 'EOF'
+cat > /etc/logrotate.d/octosip << 'EOF'
 /var/log/syslog {
     daily
     rotate 14
@@ -187,7 +187,7 @@ cat > /etc/logrotate.d/sipmon << 'EOF'
     missingok
     notifempty
 }
-/var/log/sipmon_parser.log {
+/var/log/octosip_parser.log {
     daily
     rotate 7
     compress
@@ -204,8 +204,8 @@ EOF
 # =============================================================================
 info "Configuring cron jobs..."
 (crontab -l 2>/dev/null | grep -v 'purge_old_events\|update_geoip'; \
- echo "0 3 * * * /opt/sipmon/purge_old_events.sh >> /var/log/sipmon_purge.log 2>&1"; \
- echo "0 4 * * 1 /opt/sipmon/update_geoip.sh >> /var/log/geoip_update.log 2>&1") | crontab -
+ echo "0 3 * * * /opt/octosip/purge_old_events.sh >> /var/log/octosip_purge.log 2>&1"; \
+ echo "0 4 * * 1 /opt/octosip/update_geoip.sh >> /var/log/geoip_update.log 2>&1") | crontab -
 
 # =============================================================================
 # 12. Verification
@@ -215,8 +215,8 @@ sleep 3
 systemctl is-active --quiet kamailio   && info "kamailio:    OK" || warn "kamailio:    FAIL"
 systemctl is-active --quiet postgresql && info "postgresql:  OK" || warn "postgresql:  FAIL"
 systemctl is-active --quiet rsyslog    && info "rsyslog:     OK" || warn "rsyslog:     FAIL"
-systemctl is-active --quiet sipmon-api && info "sipmon-api:  OK" || warn "sipmon-api:  FAIL"
-systemctl is-active --quiet sipmon-web && info "sipmon-web:  OK" || warn "sipmon-web:  FAIL"
+systemctl is-active --quiet octosip-api && info "octosip-api:  OK" || warn "octosip-api:  FAIL"
+systemctl is-active --quiet octosip-web && info "octosip-web:  OK" || warn "octosip-web:  FAIL"
 
 # =============================================================================
 # Post-installation
@@ -245,7 +245,7 @@ echo "     - TIMEZONE  (default: Europe/Madrid)"
 echo "     - DB_PASSWORD  (Change the password if you wish)"
 echo ""
 echo "  3. SAnd if you change config.conf after installation:"
-echo "     systemctl restart sipmon-api"
-echo "     systemctl restart sipmon-web"
+echo "     systemctl restart octosip-api"
+echo "     systemctl restart octosip-web"
 echo ""
 echo "============================================================"

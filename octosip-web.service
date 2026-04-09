@@ -3,7 +3,7 @@ Description=OctoSIP Monitor Attack Map
 After=network.target
 
 [Service]
-ExecStart=/opt/sipmon/bin/python3 -m http.server 8080 --directory /opt/sipmon/www
+ExecStart=/opt/octosip/bin/python3 -m http.server 8080 --directory /opt/octosip/www
 Restart=always
 RestartSec=5
 User=root

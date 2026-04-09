@@ -16,14 +16,10 @@ A real-time SIP attack monitoring system built on Kamailio. Captures and visuali
 ## Screenshots
 
 ```
-<img width="1263" height="864" alt="imagen" src="https://github.com/user-attachments/assets/37e9d0bb-b187-49f9-8b72-f8a7d0ec4d14" />
+![OctoSIP Honeypot WebPanel](https://raw.githubusercontent.com/tomgilabert/octosip/main/octosip.jpg)
+*The image above show OctoSIP Honeypot logging real-time attacks and trayectories, live feed with method, IP, country, UA, extension, Activity charts (last 24h / last 30 days), Top IPs, Countries, Methods, ASNs, User-Agents.*
 
-┌─────────────────────────────────────────────────────────┐
-│  Animated world map with attack trajectories            │
-│  Live feed with method, IP, country, UA, extension      │
-│  Activity charts (last 24h / last 30 days)              │
-│  Top IPs, Countries, Methods, ASNs, User-Agents         │
-└─────────────────────────────────────────────────────────┘
+
 ```
 
 ## Attack classification

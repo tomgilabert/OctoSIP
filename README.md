@@ -106,8 +106,8 @@ The installer will:
 | Service | Port | Description |
 |---------|------|-------------|
 | Kamailio | 5060 UDP/TCP | SIP honeypot |
-| sipmon-api | 5000 | REST API (Flask) |
-| sipmon-web | 8080 | Web dashboard |
+| octosip-api | 5000 | REST API (Flask) |
+| octosip-web | 8080 | Web dashboard |
 | PostgreSQL | 5432 | Event storage |
 
 ---
@@ -137,12 +137,12 @@ sip-honeypot/
 ├── config.conf              # User configuration (edit before install)
 ├── install.sh               # Installer
 ├── kamailio.cfg             # Kamailio honeypot config
-├── sipmon_parser.py         # rsyslog omprog → PostgreSQL
-├── sipmon_api.py            # REST API (Flask)
+├── octosip_parser.py         # rsyslog omprog → PostgreSQL
+├── octosip_api.py            # REST API (Flask)
 ├── index.html               # Web dashboard
 ├── 10-sip-honeypot.conf     # rsyslog config
-├── sipmon-api.service       # systemd unit
-├── sipmon-web.service       # systemd unit
+├── octosip-api.service       # systemd unit
+├── octosip-web.service       # systemd unit
 ├── purge_old_events.sh      # Daily cron: purge events older than 90 days
 └── update_geoip.sh          # Weekly cron: update GeoIP databases
 ```
@@ -153,7 +153,7 @@ sip-honeypot/
 
 **Update GeoIP databases manually:**
 ```bash
-/opt/sipmon/update_geoip.sh
+/opt/octosip/update_geoip.sh
 ```
 
 **Export IOCs (last 24h):**
@@ -163,12 +163,12 @@ curl http://localhost:5000/api/iocs?hours=24
 
 **Check service status:**
 ```bash
-systemctl status kamailio sipmon-api sipmon-web
+systemctl status kamailio octosip-api octosip-web
 ```
 
 **View live parser log:**
 ```bash
-tail -f /var/log/sipmon_parser.log
+tail -f /var/log/octosip_parser.log
 ```
 
 ---
@@ -185,9 +185,9 @@ Kamailio (honeypot)
 rsyslog (omprog)
    │  stdin pipe
    ▼
-sipmon_parser.py  ──► GeoIP lookup  ──► PostgreSQL
+octosip_parser.py  ──► GeoIP lookup  ──► PostgreSQL
                                             │
-                                    sipmon_api.py (Flask :5000)
+                                    octosip_api.py (Flask :5000)
                                             │
                                     index.html (:8080)
 ```
@@ -203,4 +203,3 @@ Kamailio impersonates a FreePBX 16 / Asterisk 20 system. It responds to:
 ## License
 
 MIT
-

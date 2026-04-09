@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>OctoSIP Honeypot — Attack Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#050d1a; color:#00ff88; font-family:'Roboto Mono',monospace; overflow:hidden; }
+  #map { width:100vw; height:100vh; }
+
+  #hud {
+    position:fixed; top:0; left:0; right:0; z-index:1000;
+    background:rgba(5,13,26,0.85); border-bottom:1px solid #00ff8844;
+    padding:8px 20px; display:flex; align-items:center; gap:16px;
+  }
+  #hud h1 { font-size:14px; color:#00ff88; letter-spacing:2px; text-transform:uppercase; margin-right:6px; }
+  .stat { text-align:center; }
+  .stat .val { font-size:22px; font-weight:bold; color:#00ffff; }
+  .stat .lbl { font-size:11px; color:#fff; letter-spacing:1px; }
+
+  #feed {
+    position:fixed; right:0; top:48px; bottom:0; width:320px; z-index:1000;
+    background:rgba(5,13,26,0.88); border-left:1px solid #00ff8822;
+    overflow:hidden; display:flex; flex-direction:column;
+  }
+  #feed h2 { font-size:11px; letter-spacing:2px; padding:10px 14px; border-bottom:1px solid #00ff8822; color:#00ff88; }
+  #feed-list { flex:1; overflow-y:auto; }
+  #feed-list::-webkit-scrollbar { width:3px; }
+  #feed-list::-webkit-scrollbar-thumb { background:#00ff8844; }
+  .feed-item { padding:8px 14px; border-bottom:1px solid #ffffff08; font-size:11px; line-height:1.6; animation:fadeIn 0.4s ease; }
+  .feed-item .method { font-weight:bold; }
+  .method-INVITE   { color:#ff4444; }
+  .method-REGISTER { color:#ffaa00; }
+  .method-OPTIONS  { color:#44aaff; }
+  .method-REPLY    { color:#888; }
+  .method-OTHER    { color:#ff88ff; }
+  .feed-item .ip  { color:#00ffff; }
+  .feed-item .loc { color:#bbb; font-size:10px; }
+  .feed-item .asn { color:#aab; font-size:12px; }
+  @keyframes fadeIn { from { opacity:0; transform:translateX(10px); } to { opacity:1; } }
+
+  #title-bar {
+    position:fixed; top:58px; left:0; z-index:999;
+    padding:6px 16px; background:rgba(5,13,26,0.7);
+    font-size:11px; color:#00ff8888; letter-spacing:2px;
+    border-right:1px solid #00ff8822; border-bottom:1px solid #00ff8822;
+  }
+
+  .ctrl-group {
+    display:flex; flex-direction:column; align-items:flex-start; gap:3px;
+  }
+  .ctrl-group .ctrl-label {
+    font-size:10px; color:#00ff88; letter-spacing:1px; white-space:nowrap;
+  }
+  .ctrl-group .ctrl-row {
+    display:flex; align-items:center; gap:5px;
+  }
+  .ctrl-group input[type=range] {
+    width:80px; accent-color:#00ff88; vertical-align:middle;
+  }
+  .ctrl-group .sval {
+    color:#00ffff; font-weight:bold; font-size:11px; min-width:36px;
+  }
+  .ctrl-top {
+    display:flex; align-items:center; gap:8px;
+  }
+  .tray-inline {
+    display:flex; align-items:center; gap:4px;
+  }
+  .tray-inline input[type=checkbox] {
+    accent-color:#00ff88; width:11px; height:11px; cursor:pointer; margin:0;
+  }
+  .tray-inline label {
+    font-size:10px; color:#00ff88; letter-spacing:1px; cursor:pointer; white-space:nowrap;
+  }
+
+  /* Popup historial */
+  .sipmon-popup .leaflet-popup-content-wrapper {
+    background:#0a1628; border:1px solid #00ff8844; border-radius:4px;
+    color:#ccc; box-shadow:0 0 12px #00ff8822;
+  }
+  .sipmon-popup .leaflet-popup-tip { background:#0a1628; }
+  .sipmon-popup .leaflet-popup-content { margin:10px 14px; }
+
+  /* Panel heatmap horario */
+  #hourly-panel {
+    position:fixed; bottom:14px; left:14px; z-index:1000;
+    background:rgba(5,13,26,0.88); border:1px solid #00ff8833;
+    border-radius:4px; padding:10px 14px 8px;
+    width:340px;
+  }
+  #hourly-panel .panel-title {
+    font-size:10px; color:#00ff8877; letter-spacing:2px;
+    margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;
+  }
+  #hourly-panel .panel-title span { color:#00ffff; font-size:11px; }
+  #hourly-panel .htabs { display:flex; gap:0; margin-bottom:8px; border-bottom:1px solid #00ff8822; }
+  #hourly-panel .htab { background:none; border:none; border-bottom:2px solid transparent; color:#00ff8855; font-size:9px; letter-spacing:1.5px; padding:3px 10px 4px; cursor:pointer; font-family:inherit; }
+  #hourly-panel .htab:hover { color:#00ff88aa; }
+  #hourly-panel .htab.active { color:#00ff88; border-bottom:2px solid #00ff88; }
+  #hourly-chart { display:block; }
+  #daily-chart { display:none; }
+
+  /* Panel Top IPs */
+  #stats-panel {
+    position:fixed; bottom:14px; right:334px; z-index:1000;
+    background:rgba(5,13,26,0.88); border:1px solid #00ff8833;
+    border-radius:4px; width:340px; overflow:hidden;
+  }
+  #stats-panel .panel-tabs {
+    display:flex; border-bottom:1px solid #00ff8822;
+  }
+  #stats-panel .ptab {
+    flex:1; padding:5px 2px; font-size:9px; color:#00ff8855; letter-spacing:1px;
+    text-align:center; cursor:pointer; border:none; background:none;
+    font-family:'Roboto Mono',monospace; transition:color 0.2s,background 0.2s;
+    white-space:nowrap;
+  }
+  #stats-panel .ptab:hover { color:#00ff88aa; background:rgba(0,255,136,0.05); }
+  #stats-panel .ptab.active { color:#00ff88; border-bottom:2px solid #00ff88; }
+  #stats-panel .panel-body { padding:8px 14px 8px; }
+  .stable { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
+  .stable td { padding:3px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stable td:first-child { color:#00ff8855; width:20px; text-align:right; padding-right:6px; }
+  .stable td:nth-child(2) { color:#00ffff; font-family:'Roboto Mono',monospace; }
+  .stable td:last-child { color:#ff4444; text-align:right; font-weight:bold; padding-left:4px; width:48px; }
+  .stable tr { cursor:default; }
+  .stable tr:hover td { background:rgba(0,255,136,0.07); }
+  .stable tr.clickable { cursor:pointer; }
+  #tab-ips .stable td:nth-child(2) { width:108px; }
+  #tab-ips .stable td:nth-child(3) { color:#888; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <h1>&#9632; OctoSIP Honeypot</h1>
+  <div class="stat"><div class="val" id="s-total">0</div><div class="lbl">TOTAL</div></div>
+  <div class="stat"><div class="val" id="s-hour">0</div><div class="lbl">ÚLTIMA HORA</div></div>
+  <div class="stat"><div class="val" id="s-day">0</div><div class="lbl">ÚLTIMAS 24H</div></div>
+  <div class="stat"><div class="val" id="s-ips">0</div><div class="lbl">IPs ÚNICAS</div></div>
+
+  <div style="margin-left:auto;display:flex;align-items:center;gap:18px;">
+
+    <div class="ctrl-group">
+      <span class="ctrl-label">ANIMATION</span>
+      <div class="ctrl-row">
+        <input type="range" id="strikeSlider" min="5" max="120" step="5">
+        <span class="sval" id="strikeVal">30s</span>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-top">
+        <span class="ctrl-label">HISTORY</span>
+        <div class="tray-inline">
+          <input type="checkbox" id="trayCheck">
+          <label for="trayCheck">TRAJECTORY</label>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <input type="range" id="histSlider" min="0" max="13" step="1">
+        <span class="sval" id="histVal">10m</span>
+      </div>
+    </div>
+
+    <button onclick="exportIOCs()" style="
+      background:rgba(0,255,136,0.1); border:1px solid #00ff8844; color:#00ff88;
+      font-family:'Roboto Mono',monospace; font-size:10px; letter-spacing:1px;
+      padding:5px 10px; cursor:pointer; border-radius:3px;
+    " title="Download attacker IPs from the last 24h">&#8659; IOCs</button>
+
+
+  </div>
+</div>
+
+<div id="title-bar"><span id="clock"></span> &mdash; LIVE ATTACK MAP &mdash; OCTOSIP HONEYPOT &mdash; IP:5060</div>
+<div id="map"></div>
+<div id="feed">
+  <h2><button id="feed-toggle" onclick="toggleFeed()" style="background:none;border:none;color:#00ff88;cursor:pointer;font-size:13px;padding:0 6px 0 0;line-height:1;vertical-align:middle">&#9646;&#9646;</button> EVENTOS EN TIEMPO REAL</h2>
+  <div id="feed-list"></div>
+</div>
+
+<!-- Hourly heatmap panel -->
+<div id="hourly-panel">
+  <div class="panel-title">
+    <span id="chart-panel-title">ACTIVITY</span>
+  </div>
+  <div class="htabs">
+    <button class="htab active" onclick="switchChartTab('hourly')">24H</button>
+    <button class="htab" onclick="switchChartTab('daily')">30 DAYS</button>
+  </div>
+  <canvas id="hourly-chart" width="312" height="120"></canvas>
+  <canvas id="daily-chart" width="312" height="120"></canvas>
+</div>
+
+<!-- Panel Top IPs -->
+<div id="stats-panel">
+  <div class="panel-tabs">
+    <button class="ptab active" onclick="switchTab('ips')">LAST 24H — IPs</button>
+    <button class="ptab" onclick="switchTab('countries')">COUNTRIES</button>
+    <button class="ptab" onclick="switchTab('methods')">METHODS</button>
+    <button class="ptab" onclick="switchTab('asns')">ASNs</button>
+    <button class="ptab" onclick="switchTab('uas')">USER-AGENT</button>
+  </div>
+  <div class="panel-body">
+    <div id="tab-ips"><table class="stable"><tbody id="topips-body"></tbody></table></div>
+    <div id="tab-countries" style="display:none"><table class="stable"><tbody id="topcountries-body"></tbody></table></div>
+    <div id="tab-methods" style="display:none"><table class="stable"><tbody id="topmethods-body"></tbody></table></div>
+    <div id="tab-asns" style="display:none"><table class="stable"><tbody id="topasns-body"></tbody></table></div>
+    <div id="tab-uas" style="display:none"><table class="stable"><tbody id="topuas-body"></tbody></table></div>
+  </div>
+</div>
+
+<script>
+const API = 'http://SIPMON_SERVER_IP:5000';
+const DST = [41.3874, 2.1686];
+
+// ── Slider Animation ───────────────────────────────────────────────────────
+const _savedStrike = parseInt(localStorage.getItem('strikeDuration') || '30');
+let strikeDurationMs = _savedStrike * 1000;
+document.getElementById('strikeSlider').value = _savedStrike;
+document.getElementById('strikeVal').textContent = _savedStrike + 's';
+
+document.getElementById('strikeSlider').addEventListener('input', function() {
+  strikeDurationMs = this.value * 1000;
+  localStorage.setItem('strikeDuration', this.value);
+  document.getElementById('strikeVal').textContent = this.value + 's';
+});
+
+// ── Slider History ───────────────────────────────────────────────────────
+const HIST_STEPS = [0, 1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440];
+function histLabel(idx) {
+  const m = HIST_STEPS[idx];
+  if (m === 0)    return '0';
+  if (m < 60)    return m + 'm';
+  if (m === 1440) return '24h';
+  const h = Math.floor(m / 60), r = m % 60;
+  return r === 0 ? h + 'h' : h + 'h' + r + 'm';
+}
+
+const _savedHistIdx = parseInt(localStorage.getItem('histDurationIdx') || '4');
+let histDurationMs = HIST_STEPS[_savedHistIdx] * 60000;
+document.getElementById('histSlider').value = _savedHistIdx;
+document.getElementById('histVal').textContent = histLabel(_savedHistIdx);
+
+document.getElementById('histSlider').addEventListener('input', function() {
+  const idx = parseInt(this.value);
+  histDurationMs = HIST_STEPS[idx] * 60000;
+  localStorage.setItem('histDurationIdx', idx);
+  document.getElementById('histVal').textContent = histLabel(idx);
+  loadHistoric();
+});
+
+// ── Checkbox Trayectory ───────────────────────────────────────────────────
+const _savedTray = localStorage.getItem('trayectoria') === '1';
+document.getElementById('trayCheck').checked = _savedTray;
+
+document.getElementById('trayCheck').addEventListener('change', function() {
+  localStorage.setItem('trayectoria', this.checked ? '1' : '0');
+  drawHistoricFromCache();
+});
+
+// ── Map ───────────────────────────────────────────────────────────────────
+const map = L.map('map', { center:[41.3874, 15.0], zoom:4, zoomControl:false, attributionControl:false });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom:18 }).addTo(map);
+
+let mapZooming = false;
+map.on('zoomstart', () => { mapZooming = true; });
+map.on('zoomend', () => {
+  mapZooming = false;
+  drawHistoricFromCache();
+  setTimeout(() => map.fire('moveend'), 0);
+});
+
+L.circleMarker(DST, { radius:5, color:'#00ff88', fillColor:'#00ff88', fillOpacity:0.9, weight:1 })
+  .addTo(map).bindTooltip('🎯 OctoSIP Honeypot — Barcelona', {permanent:false});
+
+let heatLayer = L.heatLayer([], {
+  radius:25, blur:18, maxZoom:6,
+  gradient:{0.2:'#001eff', 0.5:'#ff6600', 0.8:'#ff0000', 1.0:'#ffffff'}
+}).addTo(map);
+
+const methodColor = {
+  'INVITE':'#ff3333', 'REGISTER':'#ffaa00', 'OPTIONS':'#4488ff',
+  'REPLY':'#555555', 'CANCEL':'#ff88ff', 'BYE':'#88ff88',
+};
+function cleanIp(ip) { return ip ? ip.replace(/\/\d+$/, '') : ip; }
+
+function getColor(m) {
+  if (!m) return '#aaaaaa';
+  for (const k of Object.keys(methodColor)) if (m.startsWith(k)) return methodColor[k];
+  return '#ff88ff';
+}
+
+// ── History layer ─────────────────────────────────────────────────────────
+const historicLayers = [];
+function clearHistoric() {
+  for (const item of historicLayers) {
+    if (item.timer)  clearInterval(item.timer);
+    if (item.layer)  try { map.removeLayer(item.layer); } catch(e){}
+  }
+  historicLayers.length = 0;
+}
+
+function buildBezier(srcLat, srcLon) {
+  const STEPS = 60;
+  const ctrlLat = (srcLat + DST[0]) / 2 + Math.abs(srcLat - DST[0]) * 0.35;
+  const ctrlLon = (srcLon + DST[1]) / 2;
+  const curve = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    curve.push([
+      (1-t)*(1-t)*srcLat + 2*(1-t)*t*ctrlLat + t*t*DST[0],
+      (1-t)*(1-t)*srcLon + 2*(1-t)*t*ctrlLon + t*t*DST[1],
+    ]);
+  }
+  return curve;
+}
+
+let cachedHistoricEvents = [];
+
+function drawHistoricFromCache() {
+  clearHistoric();
+  if (histDurationMs === 0 || !cachedHistoricEvents.length) return;
+
+  const now  = Date.now();
+  const tray = document.getElementById('trayCheck').checked;
+
+  function parseTs(ts) { return new Date(ts.replace(/(\.\d{3})\d+/, '$1')).getTime(); }
+  const sorted  = cachedHistoricEvents
+    .filter(e => { const t = parseTs(e.ts); return isNaN(t) || (now - t) < histDurationMs; })
+    .sort((a,b) => a.id - b.id);
+  const forLines = tray ? sorted : [];
+  const lineIds  = new Set(forLines.map(e => e.id));
+
+  // Group events by IP: one point per IP with radius proportional to the number of attacks
+  const ipMap = new Map();
+  for (const e of sorted) {
+    if (!e.src_lat || !e.src_lon) continue;
+    if (e.id === initialLastId) continue;
+    const ip = cleanIp(e.src_ip);
+    if (!ipMap.has(ip)) ipMap.set(ip, { e, count: 0 });
+    ipMap.get(ip).count++;
+  }
+
+  const counts = [...ipMap.values()].map(v => v.count);
+  const maxCount = Math.max(...counts, 1);
+
+  for (const [ip, { e, count }] of ipMap) {
+    const color  = getColor(e.method);
+    const ts     = new Date(e.ts).toLocaleString('es-ES', {timeZone:'Europe/Madrid', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const loc    = [e.city, e.country].filter(Boolean).join(', ') || 'Desconocido';
+    const ua     = formatUA(e.user_agent || '').slice(0, 70);
+    const asnStr = e.asn_org ? `AS${e.asn_number || '?'} ${e.asn_org}` : '';
+    // Radius: minimum 5, maximum 22, proportional (logarithmic scale)
+    const radius = Math.min(22, 5 + Math.round(17 * Math.log(count + 1) / Math.log(maxCount + 1)));
+
+    const dot = L.circleMarker([e.src_lat, e.src_lon], {
+      radius, color, fillColor:color, fillOpacity:0.55, weight:2, opacity:0.8
+    }).addTo(map).bindPopup(
+      `<div style="font-family:'Roboto Mono',monospace;font-size:13px;line-height:1.7;min-width:180px">` +
+      `<b style="color:${color}">${e.method || '?'}</b> &mdash; <span style="color:#00ffff">${ip}</span>` +
+      (count > 1 ? ` <span style="color:#ff8844;font-size:11px">(${count.toLocaleString()} ataques)</span>` : '') + `<br>` +
+      `<span style="color:#ddd">${loc}</span><br>` +
+      (asnStr ? `<span style="color:#88aacc;font-size:12px">${asnStr}</span><br>` : '') +
+      `<span style="color:#bbb">${ts}</span><br>` +
+      (e.method === 'REGISTER'
+        ? `<span style="color:#ccc;font-size:12px">Ext: ${(e.from_uri||'—').slice(0,50)}</span><br>`
+        : `<span style="color:#ccc;font-size:12px">From: ${(e.from_uri||'—').slice(0,50)}</span><br>` +
+          `<span style="color:#ccc;font-size:12px">To: &nbsp;${(e.to_uri||'—').slice(0,50)}</span><br>`) +
+      `<span style="color:#bbb">UA: ${ua}</span>` +
+      `</div>`,
+      { className: 'sipmon-popup' }
+    );
+    historicLayers.push({ layer: dot, timer: null, ip });
+
+    if (tray) {
+      const line = L.polyline(buildBezier(e.src_lat, e.src_lon), {
+        color, weight:1.8, opacity:0.22
+      }).addTo(map);
+      historicLayers.push({ layer: line, timer: null });
+    }
+  }
+}
+
+async function loadHistoric() {
+  clearHistoric();
+  cachedHistoricEvents = [];
+  if (histDurationMs === 0) return;
+
+  try {
+    const since = new Date(Date.now() - histDurationMs).toISOString();
+    const r = await fetch(`${API}/api/recent?limit=1000&since=${encodeURIComponent(since)}`);
+    cachedHistoricEvents = await r.json();
+  } catch(e) { console.error('loadHistoric error:', e); return; }
+
+  drawHistoricFromCache();
+}
+
+// ── Blinking point in real time ──────────────────────────────────────────
+function placeDot(srcLat, srcLon, method, removeAfterMs) {
+  const color = getColor(method);
+  const dot = L.circleMarker([srcLat, srcLon], {
+    radius:5, color, fillColor:color, fillOpacity:0.9, weight:2, opacity:1
+  }).addTo(map);
+  let blinkOn = true;
+  const timer = setInterval(() => {
+    blinkOn = !blinkOn;
+    dot.setStyle({ fillOpacity: blinkOn ? 0.9 : 0.05, opacity: blinkOn ? 1 : 0.1 });
+  }, 500);
+  setTimeout(() => { clearInterval(timer); try { map.removeLayer(dot); } catch(e){} }, removeAfterMs);
+}
+
+// ── Animate attack (real time) ────────────────────────────────────────────
+function animateAttack(srcLat, srcLon, method, country, city, ip) {
+  const color   = getColor(method);
+  const STEPS   = 60;
+  const LOOP_MS = 1800;
+  const curve   = buildBezier(srcLat, srcLon);
+
+  const trail   = L.polyline(curve, { color, weight:1.8, opacity:0.3 }).addTo(map);
+  const missile = L.circleMarker(curve[0], {radius:4, color, fillColor:color, fillOpacity:1, weight:0}).addTo(map);
+  const halo    = L.circleMarker(curve[0], {radius:9, color, fillColor:color, fillOpacity:0.15, weight:0}).addTo(map);
+
+  missile.bindTooltip(
+    `<b>${method}</b> | ${ip}<br>${city ? city+', ' : ''}${country||'?'}${!city ? ' (sin ciudad)' : ''}`,
+    {direction:'top', opacity:0.9, sticky:true}
+  );
+
+  const dotMs = histDurationMs === 0 ? strikeDurationMs : histDurationMs;
+  placeDot(srcLat, srcLon, method, dotMs);
+
+  const startTime = performance.now();
+  const endTime   = startTime + strikeDurationMs;
+  let exploded = false;
+
+  function tick(now) {
+    if (now >= endTime) {
+      try { map.removeLayer(trail); map.removeLayer(missile); map.removeLayer(halo); } catch(e){}
+      return;
+    }
+    if (mapZooming) { requestAnimationFrame(tick); return; }
+    const t   = ((now - startTime) % LOOP_MS) / LOOP_MS;
+    const idx = Math.min(Math.floor(t * STEPS), STEPS);
+    missile.setLatLng(curve[idx]);
+    halo.setLatLng(curve[idx]);
+    if (idx >= STEPS - 2 && !exploded) {
+      exploded = true;
+      missile.setStyle({radius:10, fillOpacity:0.9});
+      halo.setStyle({radius:22, fillOpacity:0.3});
+      setTimeout(() => {
+        missile.setStyle({radius:4, fillOpacity:1});
+        halo.setStyle({radius:9, fillOpacity:0.15});
+        exploded = false;
+      }, 250);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ── Attack classification ────────────────────────────────────────────────
+// ── Tool fingerprint ───────────────────────────────────────────────────────────
+function toolName(ua) {
+  if (!ua) return null;
+  const u = ua.toLowerCase();
+  if (u.includes('friendly-scanner'))  return 'SIPVicious';
+  if (u.includes('sipvicious'))         return 'SIPVicious';
+  if (u.includes('sippts'))             return 'sippts';
+  if (u.includes('pplsip'))             return 'pplsip';
+  if (u.includes('sipcli'))             return 'sipcli';
+  if (u.includes('sip-scan'))           return 'sip-scan';
+  if (u.includes('sipsak'))             return 'sipsak';
+  if (u.includes('vaxsipuseragent'))    return 'VaxSIPUserAgent';
+  if (u.includes('sundayddr'))          return 'SunDayDDR';
+  if (u.includes('iwar'))               return 'iWar';
+  if (u.includes('sip_bruteforce'))     return 'SIP-BruteForce';
+  if (u.includes('cisco-sipgateway'))   return 'Toll Fraud Bot';
+  if (u.includes('python-'))            return 'Python script';
+  if (u.includes('go-http'))            return 'Go script';
+  if (u.includes('zgrab'))              return 'zgrab';
+  return null;
+}
+
+function formatUA(ua) {
+  if (!ua) return '—';
+  const tool = toolName(ua);
+  return tool ? `${ua} (${tool})` : ua;
+}
+
+function methodIcon(m) {
+  if (!m) return '⚡';
+  if (m === 'INVITE')            return '📞';
+  if (m === 'REGISTER')          return '🔑';
+  if (m === 'OPTIONS')           return '🔍';
+  if (m === 'BYE')               return '📵';
+  if (m === 'CANCEL')            return '❌';
+  if (m === 'REPLY')             return '💬';
+  if (m.startsWith('PIKE'))      return '🚫';
+  return '⚡';
+}
+
+function attackType(e) {
+  const m = e.method || '';
+  const to = e.to_uri || '';
+  if (m.startsWith('PIKE'))    return '🚫 BLOQUEADO';
+  if (m === 'OPTIONS')         return '🔍 SCAN';
+  if (m === 'REGISTER')        return '🔑 BRUTE FORCE';
+  if (m === 'INVITE') {
+    const num = to.match(/sip:(\d+)@/);
+    if (num && num[1].length > 10) return '☎ TOLL FRAUD';
+    return '📞 INVITE';
+  }
+  return m;
+}
+
+// ── Lateral feed ───────────────────────────────────────────────────────────
+const feedList = document.getElementById('feed-list');
+function addFeedItem(e) {
+  const cls = methodColor[e.method] ? 'method-'+e.method : 'method-OTHER';
+  const asnStr = e.asn_org ? `AS${e.asn_number||'?'} ${e.asn_org.slice(0,28)}` : '';
+  const div = document.createElement('div');
+  div.className = 'feed-item';
+  div.innerHTML = `
+    <span style="font-size:11px">${methodIcon(e.method)}</span><span class="method ${cls}"> ${e.method||'?'}</span>
+    <span class="ip" style="cursor:pointer;text-decoration:none" onclick="focusIP('${cleanIp(e.src_ip)}')">${cleanIp(e.src_ip)}</span>
+    <span class="loc">${countryFlag(e.country||'')} ${e.country||'Desconocido'}</span><br>
+    <span style="color:#bbc;font-size:12px">${new Date(e.ts).toLocaleTimeString('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>${asnStr ? ` <span class="asn">${asnStr}</span>` : ''}<br>
+    <span style="color:#bbc;font-size:12px">UA: ${formatUA(e.user_agent||'').slice(0,46)}${e.method === 'REGISTER' && e.from_uri ? ` &nbsp;Ext: ${(e.from_uri.split(':')[1]||e.from_uri).split('@')[0]}` : ''}</span>${e.method === 'INVITE' ? `<br><span style="color:#ccc;font-size:11px">From: ${(e.from_uri||'—').replace(/^sip:/,'').split('@')[0]} &nbsp;To: ${(e.to_uri||'—').replace(/^sip:/,'').split('@')[0]}</span>` : ''}
+  `;
+  feedList.insertBefore(div, feedList.firstChild);
+  while (feedList.children.length > 80) feedList.removeChild(feedList.lastChild);
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────
+async function updateStats() {
+  try {
+    const r = await fetch(`${API}/api/stats`);
+    const d = await r.json();
+    document.getElementById('s-total').textContent = Number(d.total||0).toLocaleString();
+    document.getElementById('s-hour').textContent  = Number(d.last_hour||0).toLocaleString();
+    document.getElementById('s-day').textContent   = Number(d.last_day||0).toLocaleString();
+    document.getElementById('s-ips').textContent   = Number(d.unique_ips||0).toLocaleString();
+  } catch(e) {}
+}
+
+// ── Geographical heatmap ─────────────────────────────────────────────────────
+async function updateHeatmap() {
+  try {
+    const r = await fetch(`${API}/api/heatmap`);
+    const d = await r.json();
+    heatLayer.setLatLngs(d.map(([lat,lon,w]) => [lat,lon,Math.min(w/10,1)]));
+  } catch(e) {}
+}
+
+// ── Hourly heatmap (bars) ───────────────────────────────────────────────
+let hourlyChart = null;
+
+function buildHourlyChart(data) {
+  const currentH = parseInt(new Date().toLocaleString('es-ES', {timeZone:'Europe/Madrid', hour:'2-digit', hour12:false}));
+
+  // Reorder: current hour on the right, 24 hours ago on the left
+  const ordered = [];
+  for (let i = 23; i >= 0; i--) {
+    const h = (currentH - i + 24) % 24;
+    const entry = data.find(d => d.hour === h) || {hour: h, count: 0};
+    ordered.push(entry);
+  }
+
+  const labels = ordered.map(d => String(d.hour).padStart(2,'0') + 'h');
+  const counts = ordered.map(d => d.count);
+  const maxCount = Math.max(...counts, 1);
+
+  const peakIdx = counts.indexOf(Math.max(...counts));
+  const pointColors = counts.map((c, i) => c === maxCount && maxCount > 0 ? 'rgba(255,68,68,1)' : 'rgba(0,255,136,0.7)');
+  const pointRadius = counts.map((c, i) => c === maxCount && maxCount > 0 ? 4 : 2);
+
+  if (hourlyChart) {
+    hourlyChart.data.labels = labels;
+    hourlyChart.data.datasets[0].data = counts;
+    hourlyChart.data.datasets[0].pointBackgroundColor = pointColors;
+    hourlyChart.data.datasets[0].pointRadius = pointRadius;
+    hourlyChart.update('none');
+    return;
+  }
+
+  const ctx = document.getElementById('hourly-chart').getContext('2d');
+  hourlyChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: counts,
+        borderColor: 'rgba(0,255,136,0.7)',
+        borderWidth: 1.5,
+        backgroundColor: 'rgba(0,255,136,0.08)',
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: pointColors,
+        pointBorderColor: pointColors,
+        pointRadius: pointRadius,
+        pointHoverRadius: 5,
+      }]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: {
+          title: items => items[0].label,
+          label: item => ' ' + item.raw.toLocaleString() + ' ataques'
+        },
+        backgroundColor: 'rgba(5,13,26,0.95)',
+        titleColor: '#00ffff',
+        bodyColor: '#00ff88',
+        borderColor: '#00ff8833',
+        borderWidth: 1,
+        titleFont: { family: 'Roboto Mono', size: 11 },
+        bodyFont:  { family: 'Roboto Mono', size: 11 },
+      }},
+      scales: {
+        x: {
+          ticks: {
+            color: '#00ff8855', font: { family:'Roboto Mono', size:8 },
+            maxRotation: 0,
+            callback: (val, idx) => idx % 4 === 0 || idx === 23 ? labels[idx] : ''
+          },
+          grid: { display: false },
+          border: { color: '#00ff8822' }
+        },
+        y: {
+          beginAtZero: false,
+          ticks: { display: false },
+          grid: { color: '#00ff8811' },
+          border: { display: false }
+        }
+      }
+    }
+  });
+}
+
+let dailyChart = null;
+
+function buildDailyChart(data) {
+  const labels = data.map(d => {
+    const [,m,day] = d.day.split('-');
+    return `${day}/${m}`;
+  });
+  const counts = data.map(d => d.count);
+  const maxCount = Math.max(...counts, 1);
+  const pointColorsd = counts.map(c => c === maxCount && maxCount > 0 ? 'rgba(255,68,68,1)' : 'rgba(0,255,136,0.7)');
+  const pointRadiusd = counts.map(c => c === maxCount && maxCount > 0 ? 4 : 2);
+
+  if (dailyChart) {
+    dailyChart.data.labels = labels;
+    dailyChart.data.datasets[0].data = counts;
+    dailyChart.data.datasets[0].pointBackgroundColor = pointColorsd;
+    dailyChart.data.datasets[0].pointRadius = pointRadiusd;
+    dailyChart.update('none');
+    return;
+  }
+
+  const ctx = document.getElementById('daily-chart').getContext('2d');
+  dailyChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: counts,
+        borderColor: 'rgba(0,255,136,0.7)',
+        borderWidth: 1.5,
+        backgroundColor: 'rgba(0,255,136,0.08)',
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: pointColorsd,
+        pointBorderColor: pointColorsd,
+        pointRadius: pointRadiusd,
+        pointHoverRadius: 5,
+      }]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: {
+          title: items => items[0].label,
+          label: item => ' ' + item.raw.toLocaleString() + ' ataques'
+        },
+        backgroundColor: 'rgba(5,13,26,0.95)',
+        titleColor: '#00ffff',
+        bodyColor: '#00ff88',
+        borderColor: '#00ff8833',
+        borderWidth: 1,
+        titleFont: { family: 'Roboto Mono', size: 11 },
+        bodyFont:  { family: 'Roboto Mono', size: 11 },
+      }},
+      scales: {
+        x: {
+          ticks: {
+            color: '#00ff8855', font: { family:'Roboto Mono', size:8 },
+            maxRotation: 0,
+            callback: (val, idx) => idx % 5 === 0 || idx === labels.length - 1 ? labels[idx] : ''
+          },
+          grid: { display: false },
+          border: { color: '#00ff8822' }
+        },
+        y: {
+          beginAtZero: false,
+          ticks: { display: false },
+          grid: { color: '#00ff8811' },
+          border: { display: false }
+        }
+      }
+    }
+  });
+}
+
+let currentChartTab = 'hourly';
+function switchChartTab(tab) {
+  currentChartTab = tab;
+  document.querySelectorAll('.htab').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.htab[onclick="switchChartTab('${tab}')"]`).classList.add('active');
+  document.getElementById('hourly-chart').style.display = tab === 'hourly' ? 'block' : 'none';
+  document.getElementById('daily-chart').style.display  = tab === 'daily'  ? 'block' : 'none';
+  if (tab === 'daily') updateDaily();
+}
+
+async function updateHourly() {
+  try {
+    const r = await fetch(`${API}/api/stats/hourly`);
+    const d = await r.json();
+    buildHourlyChart(d);
+  } catch(e) {}
+}
+
+async function updateDaily() {
+  try {
+    const r = await fetch(`${API}/api/stats/daily`);
+    const d = await r.json();
+    buildDailyChart(d);
+  } catch(e) {}
+}
+
+// ── Top IPs ────────────────────────────────────────────────────────────────
+const COUNTRY_CODES = {
+  'Afghanistan':'AF','Albania':'AL','Algeria':'DZ','Argentina':'AR','Armenia':'AM',
+  'Australia':'AU','Austria':'AT','Azerbaijan':'AZ','Bangladesh':'BD','Belarus':'BY',
+  'Belgium':'BE','Bolivia':'BO','Brazil':'BR','Bulgaria':'BG','Cambodia':'KH',
+  'Canada':'CA','Chile':'CL','China':'CN','Colombia':'CO','Croatia':'HR',
+  'Czech Republic':'CZ','Denmark':'DK','Ecuador':'EC','Egypt':'EG','Estonia':'EE',
+  'Finland':'FI','France':'FR','Georgia':'GE','Germany':'DE','Ghana':'GH',
+  'Greece':'GR','Hong Kong':'HK','Hungary':'HU','India':'IN','Indonesia':'ID',
+  'Iran':'IR','Iraq':'IQ','Ireland':'IE','Israel':'IL','Italy':'IT','Japan':'JP',
+  'Jordan':'JO','Kazakhstan':'KZ','Kenya':'KE','Latvia':'LV','Lithuania':'LT',
+  'Malaysia':'MY','Mexico':'MX','Moldova':'MD','Morocco':'MA','Myanmar':'MM',
+  'Netherlands':'NL','Nigeria':'NG','Norway':'NO','Pakistan':'PK','Panama':'PA',
+  'Peru':'PE','Philippines':'PH','Poland':'PL','Portugal':'PT','Romania':'RO',
+  'Russia':'RU','Saudi Arabia':'SA','Serbia':'RS','Singapore':'SG','Slovakia':'SK',
+  'Slovenia':'SI','South Africa':'ZA','South Korea':'KR','Spain':'ES','Sweden':'SE',
+  'Switzerland':'CH','Taiwan':'TW','Thailand':'TH','Turkey':'TR','Ukraine':'UA',
+  'United Arab Emirates':'AE','United Kingdom':'GB','United States':'US',
+  'Uruguay':'UY','Uzbekistan':'UZ','Venezuela':'VE','Vietnam':'VN','Yemen':'YE',
+};
+
+function countryFlag(name) {
+  const code = COUNTRY_CODES[name];
+  if (!code) return '🌐';
+  return String.fromCodePoint(...[...code].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
+
+let currentTab = 'ips';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.ptab[onclick="switchTab('${tab}')"]`).classList.add('active');
+  ['ips','countries','methods','asns','uas'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
+  });
+  loadTab(tab);
+}
+
+function loadTab(tab) {
+  if (tab === 'ips')       updateTopIPs();
+  if (tab === 'countries') updateTopCountries();
+  if (tab === 'methods')   updateTopMethods();
+  if (tab === 'asns')      updateTopASNs();
+  if (tab === 'uas')       updateTopUAs();
+}
+
+async function updateTopIPs() {
+  try {
+    const r = await fetch(`${API}/api/top_ips`);
+    const data = await r.json();
+    const tbody = document.getElementById('topips-body');
+    tbody.innerHTML = '';
+    data.slice(0, 8).forEach((d, i) => {
+      const ip      = (d.ip || '').replace(/\/\d+$/, '');
+      const flag    = countryFlag(d.country || '');
+      const country = (d.country || '?');
+      const count   = Number(d.requests).toLocaleString();
+      const tr = document.createElement('tr');
+      tr.className = 'clickable';
+      tr.title = ip + (d.country ? ' — ' + d.country : '');
+      tr.innerHTML = `<td>${i+1}</td><td>${ip}</td><td>${flag} ${country}</td><td>${count}</td>`;
+      tr.addEventListener('click', () => focusIP(ip));
+      tbody.appendChild(tr);
+    });
+  } catch(e) {}
+}
+
+async function updateTopCountries() {
+  try {
+    const r = await fetch(`${API}/api/top_countries`);
+    const data = await r.json();
+    const tbody = document.getElementById('topcountries-body');
+    tbody.innerHTML = '';
+    data.forEach((d, i) => {
+      const flag  = countryFlag(d.country || '');
+      const name  = (d.country || '?');
+      const count = Number(d.requests).toLocaleString();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i+1}</td><td>${flag} ${name}</td><td>${count}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {}
+}
+
+async function updateTopMethods() {
+  try {
+    const r = await fetch(`${API}/api/top_methods`);
+    const data = await r.json();
+    const tbody = document.getElementById('topmethods-body');
+    tbody.innerHTML = '';
+    data.forEach((d, i) => {
+      const icon  = methodIcon(d.method || '');
+      const count = Number(d.requests).toLocaleString();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i+1}</td><td>${icon} ${d.method||'?'}</td><td>${count}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {}
+}
+
+async function updateTopASNs() {
+  try {
+    const r = await fetch(`${API}/api/top_asns`);
+    const data = await r.json();
+    const tbody = document.getElementById('topasns-body');
+    tbody.innerHTML = '';
+    data.forEach((d, i) => {
+      const asn   = d.asn_number ? `AS${d.asn_number}` : '';
+      const name  = (d.asn_org || '?');
+      const count = Number(d.requests).toLocaleString();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i+1}</td><td title="${d.asn_org||''}">${asn} ${name}</td><td>${count}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {}
+}
+
+async function updateTopUAs() {
+  try {
+    const r = await fetch(`${API}/api/top_useragents`);
+    const data = await r.json();
+    const tbody = document.getElementById('topuas-body');
+    tbody.innerHTML = '';
+    data.forEach((d, i) => {
+      const ua    = formatUA(d.user_agent || '');
+      const count = Number(d.requests).toLocaleString();
+      const tr = document.createElement('tr');
+      tr.title = d.user_agent || '';
+      tr.innerHTML = `<td>${i+1}</td><td>${ua}</td><td>${count}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {}
+}
+
+// ── Initial load ──────────────────────────────────────────────────────────
+let lastId = 0;
+let initialLastId = 0;
+
+async function initialLoad() {
+  try {
+    const rFeed = await fetch(`${API}/api/recent?limit=50`);
+    const feed  = await rFeed.json();
+    feed.sort((a,b) => a.id - b.id);
+    for (const e of feed) { addFeedItem(e); if (e.id > lastId) lastId = e.id; }
+
+    const last = feed[feed.length - 1];
+    if (last && last.src_lat && last.src_lon) {
+      initialLastId = last.id;
+      animateAttack(last.src_lat, last.src_lon, last.method, last.country, last.city, cleanIp(last.src_ip));
+    }
+  } catch(e) {}
+
+  await loadHistoric();
+}
+
+// ── Feed pause/play ────────────────────────────────────────────────────────
+let feedPaused = false;
+function toggleFeed() {
+  feedPaused = !feedPaused;
+  document.getElementById('feed-toggle').innerHTML = feedPaused ? '&#9654;' : '&#9646;&#9646;';
+}
+
+// ── Real-time polling ────────────────────────────────────────────────────
+async function pollEvents() {
+  try {
+    const url = `${API}/api/recent?limit=30&since=${encodeURIComponent(new Date(Date.now()-5000).toISOString())}`;
+    const r = await fetch(url);
+    const events = await r.json();
+    events.sort((a,b) => a.id - b.id);
+    for (const e of events) {
+      if (e.id <= lastId) continue;
+      lastId = e.id;
+      if (!feedPaused) addFeedItem(e);
+      if (e.src_lat && e.src_lon) {
+        const delay = Math.random() * 800;
+        setTimeout(() => animateAttack(e.src_lat, e.src_lon, e.method, e.country, e.city, cleanIp(e.src_ip)), delay);
+      }
+    }
+  } catch(e) {}
+}
+
+// ── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('es-ES', {
+    timeZone:'Europe/Madrid', day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit', second:'2-digit'
+  }).replace(',', ' -');
+}
+
+// ── Focus IP on map ──────────────────────────────────────────────────────────────
+async function focusIP(ip) {
+  // Search in history cache
+  let ev = cachedHistoricEvents.find(e => (e.src_ip || '').startsWith(ip));
+
+  // If not in cache, query the API directly
+  if (!ev || !ev.src_lat || !ev.src_lon) {
+    try {
+      const r = await fetch(`${API}/api/recent?limit=1&ip=${encodeURIComponent(ip)}`);
+      const data = await r.json();
+      if (data && data.length) ev = data[0];
+    } catch(e) {}
+  }
+
+  if (!ev || !ev.src_lat || !ev.src_lon) return;
+  map.setView([ev.src_lat, ev.src_lon], 6);
+
+  // Try to open popup of existing marker in history
+  const entry = historicLayers.find(h => h.ip === ip && h.layer && h.layer.getPopup);
+  if (entry) { setTimeout(() => entry.layer.openPopup(), 400); return; }
+
+  // Create temporary marker with popup
+  const color = getColor(ev.method);
+  const loc   = [ev.city, ev.country].filter(Boolean).join(', ') || 'Unknown';
+  const ts    = new Date(ev.ts).toLocaleString('es-ES', {timeZone:'Europe/Madrid', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const ua    = formatUA(ev.user_agent || '').slice(0, 70);
+  const asnStr = ev.asn_org ? `AS${ev.asn_number || '?'} ${ev.asn_org}` : '';
+  const marker = L.circleMarker([ev.src_lat, ev.src_lon], {
+    radius:6, color:'#ffffff', fillColor:color, fillOpacity:0.8, weight:2, opacity:1
+  }).addTo(map).bindPopup(
+    `<div style="font-family:'Roboto Mono',monospace;font-size:13px;line-height:1.7;min-width:180px">` +
+    `<b style="color:${color}">${ev.method || '?'}</b> &mdash; <span style="color:#00ffff">${ip}</span><br>` +
+    `<span style="color:#ddd">${loc}</span><br>` +
+    (asnStr ? `<span style="color:#88aacc;font-size:12px">${asnStr}</span><br>` : '') +
+    `<span style="color:#bbb">${ts}</span><br>` +
+    (ev.method === 'REGISTER'
+      ? `<span style="color:#ccc;font-size:12px">Ext: ${(ev.from_uri||'—').slice(0,50)}</span><br>`
+      : `<span style="color:#ccc;font-size:12px">From: ${(ev.from_uri||'—').slice(0,50)}</span><br>` +
+        `<span style="color:#ccc;font-size:12px">To: &nbsp;${(ev.to_uri||'—').slice(0,50)}</span><br>`) +
+    `<span style="color:#bbb">UA: ${ua}</span>` +
+    `</div>`,
+    { className: 'sipmon-popup' }
+  );
+  setTimeout(() => { marker.openPopup(); }, 400);
+  setTimeout(() => { marker.remove(); }, 10000);
+}
+
+// ── Export IOCs ───────────────────────────────────────────────────────────────
+function exportIOCs() {
+  const a = document.createElement('a');
+  a.href = `${API}/api/iocs?hours=24`;
+  a.download = 'iocs_24h.txt';
+  a.click();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+updateStats();
+updateHeatmap();
+updateHourly();
+updateTopIPs();
+initialLoad();
+setInterval(pollEvents,    3000);
+setInterval(updateStats,  10000);
+setInterval(updateHeatmap,30000);
+setInterval(updateHourly,  60000);
+setInterval(() => loadTab(currentTab), 60000);
+setInterval(updateClock,    1000);
+updateClock();
+</script>
+</body>
+</html>

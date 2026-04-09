@@ -49,7 +49,7 @@ apt-get install -y -qq \
     postgresql postgresql-client \
     python3 python3-venv python3-pip \
     rsyslog \
-    curl wget tar \
+    sudo curl wget tar \
     logrotate
 
 # =============================================================================

@@ -1,0 +1,198 @@
+#!/opt/sipmon/bin/python3
+"""
+sipmon_parser.py — Reads Kamailio logs from stdin (rsyslog omprog), resolves GeoIP and ASN, and inserts them into PostgreSQL.
+Flush: every 10 messages OR every 5 seconds (whichever comes first).
+"""
+
+import sys, re, logging, signal, threading, time
+import psycopg2, psycopg2.extras
+import geoip2.database
+
+# --- Config ---
+def load_config(path='/opt/sipmon/config.conf'):
+    cfg = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    cfg[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return cfg
+
+cfg = load_config()
+
+DB_DSN         = "host=127.0.0.1 port=5432 dbname={} user={} password={}".format(
+                    cfg.get('DB_NAME', 'sipmon'),
+                    cfg.get('DB_USER', 'sipmon'),
+                    cfg.get('DB_PASSWORD', ''))
+GEOIP_DB       = "/opt/sipmon/geoip/GeoLite2-City.mmdb"
+GEOIP_ASN_DB   = "/opt/sipmon/geoip/GeoLite2-ASN.mmdb"
+BATCH_SIZE     = 10
+FLUSH_INTERVAL = 5
+
+RE_SIPREQ = re.compile(
+    r'src=(?P<src_ip>[\d\.a-fA-F:]+):(?P<src_port>\d+)\s+'
+    r'method=(?P<method>\S+)\s+'
+    r'from=(?P<from_uri>\S+)\s+'
+    r'to=(?P<to_uri>\S+)\s+'
+    r'contact=(?P<contact>\S*)\s+'
+    r'ua=(?P<user_agent>.*?)\s+'
+    r'ci=(?P<call_id>\S+)'
+)
+RE_SIPREP = re.compile(
+    r'src=(?P<src_ip>[\d\.a-fA-F:]+):(?P<src_port>\d+)\s+'
+    r'status=(?P<status>\S+)\s+reason=(?P<reason>.*?)\s+ci=(?P<call_id>\S+)'
+)
+RE_PIKE = re.compile(
+    r'src=(?P<src_ip>[\d\.a-fA-F:]+)\s+method=(?P<method>\S+)\s+ua=(?P<user_agent>.*)'
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+    handlers=[logging.FileHandler('/var/log/sipmon_parser.log')]
+)
+log = logging.getLogger('sipmon')
+
+INSERT_SQL = """
+    INSERT INTO sip_events
+        (src_ip, src_port, method, from_uri, to_uri, contact, user_agent,
+         call_id, status, latitude, longitude, country, city, asn_number, asn_org)
+    VALUES
+        (%(src_ip)s, %(src_port)s, %(method)s, %(from_uri)s, %(to_uri)s,
+         %(contact)s, %(user_agent)s, %(call_id)s, %(status)s,
+         %(latitude)s, %(longitude)s, %(country)s, %(city)s,
+         %(asn_number)s, %(asn_org)s)
+"""
+
+def connect():
+    for attempt in range(10):
+        try:
+            conn = psycopg2.connect(DB_DSN)
+            conn.autocommit = False
+            log.info("PostgreSQL conectado")
+            return conn
+        except Exception as e:
+            log.warning(f"Intento {attempt+1}/10: {e}")
+            time.sleep(3)
+    raise RuntimeError("No se pudo conectar a PostgreSQL")
+
+def geoip_lookup(reader, ip):
+    try:
+        r = reader.city(ip)
+        return (r.location.latitude, r.location.longitude,
+                r.country.name, r.city.name)
+    except Exception:
+        return (None, None, None, None)
+
+def asn_lookup(reader, ip):
+    if reader is None:
+        return (None, None)
+    try:
+        r = reader.asn(ip)
+        return (r.autonomous_system_number, r.autonomous_system_organization)
+    except Exception:
+        return (None, None)
+
+def parse_line(line, geo_reader, asn_reader):
+    row = {
+        'src_ip': None, 'src_port': None, 'method': None,
+        'from_uri': None, 'to_uri': None, 'contact': None,
+        'user_agent': None, 'call_id': None, 'status': None,
+        'latitude': None, 'longitude': None, 'country': None, 'city': None,
+        'asn_number': None, 'asn_org': None,
+    }
+    matched = False
+
+    if 'SIPREQ' in line or any(x in line for x in ('SCAN_OPTIONS','SCAN_REGISTER','SCAN_INVITE')):
+        m = RE_SIPREQ.search(line)
+        if m:
+            row.update(m.groupdict())
+            row['src_port'] = int(row['src_port'])
+            matched = True
+    elif 'SIPREP' in line:
+        m = RE_SIPREP.search(line)
+        if m:
+            d = m.groupdict()
+            row.update({'src_ip': d['src_ip'], 'src_port': int(d['src_port']),
+                        'status': d['status'], 'call_id': d['call_id'], 'method': 'REPLY'})
+            matched = True
+    elif 'PIKE_BLOCK' in line:
+        m = RE_PIKE.search(line)
+        if m:
+            row.update(m.groupdict())
+            row['method'] = 'PIKE:' + row.get('method', '')
+            matched = True
+
+    if matched and row['src_ip']:
+        row['latitude'], row['longitude'], row['country'], row['city'] = \
+            geoip_lookup(geo_reader, row['src_ip'])
+        row['asn_number'], row['asn_org'] = \
+            asn_lookup(asn_reader, row['src_ip'])
+        return row
+    return None
+
+def main():
+    conn       = connect()
+    cur        = conn.cursor()
+    geo_reader = geoip2.database.Reader(GEOIP_DB)
+
+    try:
+        asn_reader = geoip2.database.Reader(GEOIP_ASN_DB)
+        log.info("ASN database cargada")
+    except Exception as e:
+        asn_reader = None
+        log.warning(f"ASN database no disponible: {e}")
+
+    batch = []
+    lock  = threading.Lock()
+
+    def flush():
+        with lock:
+            if not batch:
+                return
+            try:
+                psycopg2.extras.execute_batch(cur, INSERT_SQL, batch)
+                conn.commit()
+                log.info(f"Insertados {len(batch)} eventos")
+            except Exception as e:
+                log.error(f"flush error: {e}")
+                conn.rollback()
+            batch.clear()
+
+    def timer_flush():
+        while True:
+            time.sleep(FLUSH_INTERVAL)
+            flush()
+    threading.Thread(target=timer_flush, daemon=True).start()
+
+    def shutdown(sig, frame):
+        flush()
+        geo_reader.close()
+        if asn_reader:
+            asn_reader.close()
+        conn.close()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        row = parse_line(line, geo_reader, asn_reader)
+        if row:
+            with lock:
+                batch.append(row)
+            if len(batch) >= BATCH_SIZE:
+                flush()
+        if conn.closed:
+            conn = connect()
+            cur  = conn.cursor()
+
+if __name__ == '__main__':
+    main()

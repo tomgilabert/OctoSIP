@@ -16,6 +16,8 @@ A real-time SIP attack monitoring system built on Kamailio. Captures and visuali
 ## Screenshots
 
 ```
+<img width="1263" height="864" alt="imagen" src="https://github.com/user-attachments/assets/37e9d0bb-b187-49f9-8b72-f8a7d0ec4d14" />
+
 ┌─────────────────────────────────────────────────────────┐
 │  Animated world map with attack trajectories            │
 │  Live feed with method, IP, country, UA, extension      │

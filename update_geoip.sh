@@ -1,8 +1,8 @@
 #!/bin/bash
 # Download/update the MaxMind GeoLite2 databases
-source /opt/sipmon/config.conf
+source /opt/octosip/config.conf
 
-DIR=/opt/sipmon/geoip
+DIR=/opt/octosip/geoip
 BASE_URL="https://download.maxmind.com/geoip/databases"
 
 cd "$DIR"
@@ -15,6 +15,6 @@ for DB in GeoLite2-City GeoLite2-ASN; do
     echo "$(date): $DB updated" >> /var/log/geoip_update.log
 done
 
-pkill -f sipmon_parser.py
+pkill -f octosip_parser.py
 sleep 2
-systemctl restart sipmon-api
+systemctl restart octosip-api

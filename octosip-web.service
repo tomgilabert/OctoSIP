@@ -3,7 +3,8 @@ Description=OctoSIP Monitor Attack Map
 After=network.target
 
 [Service]
-ExecStart=/opt/octosip/bin/python3 -m http.server 8080 --directory /opt/octosip/www
+EnvironmentFile=/opt/octosip/octosip.env
+ExecStart=/opt/octosip/venv/bin/python3 -m http.server 8080 --directory ${OCTOSIP_DIR}
 Restart=always
 RestartSec=5
 User=root

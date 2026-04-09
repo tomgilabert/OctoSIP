@@ -1,4 +1,4 @@
-#!/opt/octosip/bin/python3
+#!/opt/octosip/venv/bin/python3
 """
 octosip_parser.py — Reads Kamailio logs from stdin (rsyslog omprog), resolves GeoIP and ASN, and inserts them into PostgreSQL.
 Flush: every 10 messages OR every 5 seconds (whichever comes first).

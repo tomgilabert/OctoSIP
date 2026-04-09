@@ -1,4 +1,4 @@
-#!/opt/octosip/bin/python3
+#!/opt/octosip/venv/bin/python3
 """
 octosip_api.py — API REST for the animated SIP attack map.
 """

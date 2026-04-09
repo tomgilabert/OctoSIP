@@ -3,7 +3,8 @@ Description=OctoSIP Monitor API
 After=network.target postgresql.service
 
 [Service]
-ExecStart=/opt/octosip/bin/python3 /opt/octosip/octosip_api.py
+EnvironmentFile=/opt/octosip/octosip.env
+ExecStart=/opt/octosip/venv/bin/python3 ${OCTOSIP_DIR}/octosip_api.py
 Restart=always
 RestartSec=5
 User=root

@@ -102,30 +102,35 @@ info "PostgreSQL configured"
 # =============================================================================
 # 4. Python environment
 # =============================================================================
-info "Creating Python environment in /opt/octosip..."
-mkdir -p /opt/octosip/geoip /opt/octosip/www
+info "Creating Python environment in /opt/octosip/venv..."
+mkdir -p /opt/octosip/geoip
 
-python3 -m venv /opt/octosip
-/opt/octosip/bin/pip install -q --upgrade pip
-/opt/octosip/bin/pip install -q psycopg2-binary geoip2 flask flask-cors
+python3 -m venv /opt/octosip/venv
+/opt/octosip/venv/bin/pip install -q --upgrade pip
+/opt/octosip/venv/bin/pip install -q psycopg2-binary geoip2 flask flask-cors
 
 # =============================================================================
-# 5. Copying files
+# 5. Runtime configuration
 # =============================================================================
-info "Copying application files..."
-cp "$SCRIPT_DIR/config.conf"       /opt/octosip/config.conf
-cp "$SCRIPT_DIR/octosip_parser.py"  /opt/octosip/octosip_parser.py
-cp "$SCRIPT_DIR/octosip_api.py"     /opt/octosip/octosip_api.py
-cp "$SCRIPT_DIR/purge_old_events.sh" /opt/octosip/purge_old_events.sh
-cp "$SCRIPT_DIR/update_geoip.sh"   /opt/octosip/update_geoip.sh
+info "Setting up runtime configuration..."
 
-chmod +x /opt/octosip/octosip_parser.py
-chmod +x /opt/octosip/octosip_api.py
-chmod +x /opt/octosip/purge_old_events.sh
-chmod +x /opt/octosip/update_geoip.sh
+# Save the source directory so services can find the code
+echo "OCTOSIP_DIR=$SCRIPT_DIR" > /opt/octosip/octosip.env
 
-# Copy index.html (API URL resolved dynamically via window.location.hostname)
-cp "$SCRIPT_DIR/index.html" /opt/octosip/www/index.html
+# Copy config.conf only on first install (preserve existing config on updates)
+if [ ! -f /opt/octosip/config.conf ]; then
+    cp "$SCRIPT_DIR/config.conf" /opt/octosip/config.conf
+    info "config.conf copied to /opt/octosip/config.conf"
+else
+    info "config.conf already exists in /opt/octosip/, keeping existing configuration"
+fi
+
+# Make scripts executable
+chmod +x "$SCRIPT_DIR/octosip_parser.py"
+chmod +x "$SCRIPT_DIR/octosip_api.py"
+chmod +x "$SCRIPT_DIR/purge_old_events.sh"
+chmod +x "$SCRIPT_DIR/update_geoip.sh"
+chmod +x "$SCRIPT_DIR/update.sh"
 
 # =============================================================================
 # 6. GeoIP
@@ -159,7 +164,8 @@ info "Kamailio started"
 # 8. rsyslog
 # =============================================================================
 info "Configuring rsyslog..."
-cp "$SCRIPT_DIR/10-sip-honeypot.conf" /etc/rsyslog.d/10-sip-honeypot.conf
+sed "s|OCTOSIP_DIR_PLACEHOLDER|$SCRIPT_DIR|g" \
+    "$SCRIPT_DIR/10-octosip-honeypot.conf" > /etc/rsyslog.d/10-octosip-honeypot.conf
 systemctl restart rsyslog
 info "rsyslog configured"
 
@@ -204,8 +210,8 @@ EOF
 # =============================================================================
 info "Configuring cron jobs..."
 (crontab -l 2>/dev/null | grep -v 'purge_old_events\|update_geoip'; \
- echo "0 3 * * * /opt/octosip/purge_old_events.sh >> /var/log/octosip_purge.log 2>&1"; \
- echo "0 4 * * 1 /opt/octosip/update_geoip.sh >> /var/log/geoip_update.log 2>&1") | crontab -
+ echo "0 3 * * * $SCRIPT_DIR/purge_old_events.sh >> /var/log/octosip_purge.log 2>&1"; \
+ echo "0 4 * * 1 $SCRIPT_DIR/update_geoip.sh >> /var/log/geoip_update.log 2>&1") | crontab -
 
 # =============================================================================
 # 12. Verification
@@ -244,8 +250,10 @@ echo "       (Destination point coordinates on the map)"
 echo "     - TIMEZONE  (default: Europe/Madrid)"
 echo "     - DB_PASSWORD  (Change the password if you wish)"
 echo ""
-echo "  3. SAnd if you change config.conf after installation:"
+echo "  3. To update to a newer version in the future:"
+echo "     cd $SCRIPT_DIR && sudo ./update.sh"
+echo ""
+echo "  4. If you change /opt/octosip/config.conf after installation:"
 echo "     systemctl restart octosip-api"
-echo "     systemctl restart octosip-web"
 echo ""
 echo "============================================================"

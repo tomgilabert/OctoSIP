@@ -128,27 +128,40 @@ The installer will:
 ## File structure
 
 ```
-octosip/
-├── config.conf              # User configuration (edit before install)
-├── install.sh               # Installer
-├── kamailio.cfg             # Kamailio honeypot config
-├── octosip_parser.py         # rsyslog omprog → PostgreSQL
-├── octosip_api.py            # REST API (Flask)
-├── index.html               # Web dashboard
-├── 10-sip-honeypot.conf     # rsyslog config
-├── octosip-api.service       # systemd unit
-├── octosip-web.service       # systemd unit
-├── purge_old_events.sh      # Daily cron: purge events older than 90 days
-└── update_geoip.sh          # Weekly cron: update GeoIP databases
+octosip/                        # Source code (git repo — update with git pull)
+├── config.conf                 # Template config (edit before first install)
+├── install.sh                  # Installer
+├── update.sh                   # Update: git pull + restart services
+├── kamailio.cfg                # Kamailio honeypot config template
+├── octosip_parser.py           # rsyslog omprog → PostgreSQL
+├── octosip_api.py              # REST API (Flask)
+├── index.html                  # Web dashboard
+├── 10-octosip-honeypot.conf    # rsyslog config template
+├── octosip-api.service         # systemd unit template
+├── octosip-web.service         # systemd unit template
+├── purge_old_events.sh         # Daily cron: purge events older than 90 days
+└── update_geoip.sh             # Weekly cron: update GeoIP databases
+
+/opt/octosip/                   # Runtime data only (not in git)
+├── venv/                       # Python virtual environment
+├── config.conf                 # Active config (with generated DB password)
+├── geoip/                      # MaxMind GeoIP databases
+└── octosip.env                 # Internal: source repo path for systemd
 ```
 
 ---
 
 ## Maintenance
 
+**Update to latest version:**
+```bash
+cd /path/to/octosip
+sudo ./update.sh
+```
+
 **Update GeoIP databases manually:**
 ```bash
-/opt/octosip/update_geoip.sh
+/path/to/octosip/update_geoip.sh
 ```
 
 **Export IOCs (last 24h):**

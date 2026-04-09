@@ -1,6 +1,6 @@
 #!/opt/octosip/bin/python3
 """
-sipmon_api.py — API REST for the animated SIP attack map.
+octosip_api.py — API REST for the animated SIP attack map.
 """
 
 from flask import Flask, jsonify, request, Response
@@ -25,8 +25,8 @@ def load_config(path='/opt/octosip/config.conf'):
 cfg = load_config()
 
 DB_DSN     = "host=127.0.0.1 port=5432 dbname={} user={} password={}".format(
-                cfg.get('DB_NAME', 'sipmon'),
-                cfg.get('DB_USER', 'sipmon'),
+                cfg.get('DB_NAME', 'octosip'),
+                cfg.get('DB_USER', 'octosip'),
                 cfg.get('DB_PASSWORD', ''))
 TARGET_LAT = float(cfg.get('MAP_TARGET_LAT', 41.3874))
 TARGET_LON = float(cfg.get('MAP_TARGET_LON', 2.1686))

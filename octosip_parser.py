@@ -107,7 +107,7 @@ def parse_line(line, geo_reader, asn_reader):
     }
     matched = False
 
-    if 'SIPREQ' in line or any(x in line for x in ('SCAN_OPTIONS','SCAN_REGISTER','SCAN_INVITE')):
+    if 'SIPREQ' in line:
         m = RE_SIPREQ.search(line)
         if m:
             row.update(m.groupdict())

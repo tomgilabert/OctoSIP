@@ -28,9 +28,10 @@ DB_DSN     = "host=127.0.0.1 port=5432 dbname={} user={} password={}".format(
                 cfg.get('DB_NAME', 'octosip'),
                 cfg.get('DB_USER', 'octosip'),
                 cfg.get('DB_PASSWORD', ''))
-TARGET_LAT = float(cfg.get('MAP_TARGET_LAT', 41.3874))
-TARGET_LON = float(cfg.get('MAP_TARGET_LON', 2.1686))
-TIMEZONE   = cfg.get('TIMEZONE', 'Europe/Madrid')
+TARGET_LAT  = float(cfg.get('MAP_TARGET_LAT', 41.3874))
+TARGET_LON  = float(cfg.get('MAP_TARGET_LON', 2.1686))
+TARGET_NAME = cfg.get('MAP_TARGET_NAME', '')
+TIMEZONE    = cfg.get('TIMEZONE', 'Europe/Madrid')
 
 app  = Flask(__name__)
 CORS(app)
@@ -99,6 +100,14 @@ def recent():
             'asn_org':    r['asn_org'],
         })
     return jsonify(events)
+
+@app.route('/api/config')
+def config():
+    return jsonify({
+        'target_lat':  TARGET_LAT,
+        'target_lon':  TARGET_LON,
+        'target_name': TARGET_NAME,
+    })
 
 @app.route('/api/stats')
 def stats():
@@ -203,7 +212,8 @@ def daily():
 
 @app.route('/api/iocs')
 def iocs():
-    hours = min(int(request.args.get('hours', 24)), 168)
+    hours = min(int(request.args.get('hours', 24)), 720)
+    label = request.args.get('label', f'{hours}h')
     rows = query("""
         SELECT DISTINCT src_ip::text AS ip
         FROM sip_events
@@ -212,11 +222,11 @@ def iocs():
         ORDER BY ip
     """, (hours,))
     ips  = [r['ip'].split('/')[0] for r in rows]
-    body = "# SIP Honeypot IOCs — last {}h — {}\n".format(
-        hours, datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'))
+    body = "# SIP Honeypot IOCs — last {} — {}\n".format(
+        label, datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'))
     body += "\n".join(ips) + "\n"
     return Response(body, mimetype='text/plain',
-                    headers={'Content-Disposition': f'attachment; filename="iocs_{hours}h.txt"'})
+                    headers={'Content-Disposition': f'attachment; filename="iocs_{label}.txt"'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)

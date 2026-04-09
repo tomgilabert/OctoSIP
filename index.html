@@ -135,6 +135,12 @@
   .stable tr.clickable { cursor:pointer; }
   #tab-ips .stable td:nth-child(2) { width:108px; }
   #tab-ips .stable td:nth-child(3) { color:#888; }
+
+  .ioc-opt {
+    padding:7px 16px; cursor:pointer; font-size:10px; color:#00ff88;
+    font-family:'Roboto Mono',monospace; letter-spacing:1px; white-space:nowrap;
+  }
+  .ioc-opt:hover { background:rgba(0,255,136,0.15); color:#fff; }
 </style>
 </head>
 <body>
@@ -170,11 +176,11 @@
       </div>
     </div>
 
-    <button onclick="exportIOCs()" style="
+    <button id="ioc-btn" onclick="toggleIOCMenu()" style="
       background:rgba(0,255,136,0.1); border:1px solid #00ff8844; color:#00ff88;
       font-family:'Roboto Mono',monospace; font-size:10px; letter-spacing:1px;
       padding:5px 10px; cursor:pointer; border-radius:3px;
-    " title="Download attacker IPs from the last 24h">&#8659; IOCs</button>
+    " title="Download attacker IPs">&#8659; IOCs</button>
 
 
   </div>
@@ -220,7 +226,8 @@
 
 <script>
 const API = `http://${window.location.hostname}:5000`;
-const DST = [41.3874, 2.1686];
+let DST = [41.3874, 2.1686];
+let DST_NAME = '';
 
 // ── Slider Animation ───────────────────────────────────────────────────────
 const _savedStrike = parseInt(localStorage.getItem('strikeDuration') || '30');
@@ -279,8 +286,8 @@ map.on('zoomend', () => {
   setTimeout(() => map.fire('moveend'), 0);
 });
 
-L.circleMarker(DST, { radius:5, color:'#00ff88', fillColor:'#00ff88', fillOpacity:0.9, weight:1 })
-  .addTo(map).bindTooltip('🎯 OctoSIP Honeypot — Barcelona', {permanent:false});
+let dstMarker = L.circleMarker(DST, { radius:5, color:'#00ff88', fillColor:'#00ff88', fillOpacity:0.9, weight:1 })
+  .addTo(map).bindTooltip(`🎯 OctoSIP Honeypot${DST_NAME ? ' — ' + DST_NAME : ''}`, {permanent:false});
 
 let heatLayer = L.heatLayer([], {
   radius:25, blur:18, maxZoom:6,
@@ -987,14 +994,46 @@ async function focusIP(ip) {
 }
 
 // ── Export IOCs ───────────────────────────────────────────────────────────────
-function exportIOCs() {
+function exportIOCs(hours, label) {
+  hours = hours || 24;
+  label = label || (hours + 'h');
   const a = document.createElement('a');
-  a.href = `${API}/api/iocs?hours=24`;
-  a.download = 'iocs_24h.txt';
+  a.href = `${API}/api/iocs?hours=${hours}&label=${label}`;
+  a.download = `iocs_${label}.txt`;
   a.click();
+  document.getElementById('ioc-menu').style.display = 'none';
 }
+function toggleIOCMenu() {
+  const m = document.getElementById('ioc-menu');
+  if (m.style.display === 'none') {
+    const btn = document.getElementById('ioc-btn');
+    const r = btn.getBoundingClientRect();
+    m.style.top  = (r.bottom + 2) + 'px';
+    m.style.left = r.right - m.offsetWidth + 'px';
+    m.style.display = 'block';
+    // Recalculate left after it's visible (offsetWidth now known)
+    requestAnimationFrame(() => {
+      m.style.left = (r.right - m.offsetWidth) + 'px';
+    });
+  } else {
+    m.style.display = 'none';
+  }
+}
+document.addEventListener('click', function(e) {
+  if (e.target !== document.getElementById('ioc-btn')) {
+    document.getElementById('ioc-menu').style.display = 'none';
+  }
+});
 
 // ── Init ───────────────────────────────────────────────────────────────────
+fetch(`${API}/api/config`).then(r => r.json()).then(c => {
+  DST = [c.target_lat, c.target_lon];
+  DST_NAME = c.target_name || '';
+  dstMarker.setLatLng(DST);
+  dstMarker.setTooltipContent(`🎯 OctoSIP Honeypot${DST_NAME ? ' — ' + DST_NAME : ''}`);
+  map.setView([c.target_lat, 15.0], map.getZoom());
+}).catch(() => {});
+
 updateStats();
 updateHeatmap();
 updateHourly();
@@ -1008,5 +1047,10 @@ setInterval(() => loadTab(currentTab), 60000);
 setInterval(updateClock,    1000);
 updateClock();
 </script>
+<div id="ioc-menu" style="display:none;position:fixed;background:#0d1f3c;border:1px solid #00ff8888;border-radius:3px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.8);">
+  <div onclick="exportIOCs(24)" class="ioc-opt">Last 24h</div>
+  <div onclick="exportIOCs(168,'7d')" class="ioc-opt" style="border-top:1px solid #00ff8822;">Last 7 days</div>
+  <div onclick="exportIOCs(720,'30d')" class="ioc-opt" style="border-top:1px solid #00ff8822;">Last 30 days</div>
+</div>
 </body>
 </html>

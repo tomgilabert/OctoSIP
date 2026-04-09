@@ -15,7 +15,7 @@ A real-time SIP attack monitoring system built on Kamailio. Captures and visuali
 
 ## Screenshots
 <img src="https://github.com/tomgilabert/octosip/blob/main/octosip.png" width="100" height="100"/>
-<img src="https://github.com/tomgilabert/octosip/blob/main/octosip.png" width="200" />
+<img src="https://github.com/tomgilabert/octosip/blob/main/octosip.png" width="400" />
 
 
 ![OctoSIP Honeypot WebPanel](https://github.com/tomgilabert/octosip/blob/main/octosip.png | width=100)

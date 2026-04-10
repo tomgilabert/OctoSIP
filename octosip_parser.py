@@ -54,7 +54,13 @@ RE_PIKE = re.compile(
     r'src=(?P<src_ip>[\d\.a-fA-F:]+)\s+method=(?P<method>\S+)\s+ua=(?P<user_agent>.*)'
 )
 RE_AUTH = re.compile(
-    r'src=(?P<src_ip>[\d\.a-fA-F:]+)\s+ua=(?P<user_agent>.*?)\s+from=(?P<from_uri>\S+)\s+auth_hdr=(?P<auth_hdr>.*)'
+    r'src=(?P<src_ip>[\d\.a-fA-F:]+)\s+ua=(?P<user_agent>.*?)\s+from=(?P<from_uri>\S+)\s+ci=(?P<call_id>\S+)\s+auth_hdr=(?P<auth_hdr>.*)'
+)
+RE_REGCHALLENGE = re.compile(
+    r'src=(?P<src_ip>[\d\.a-fA-F:]+):(?P<src_port>\d+)\s+'
+    r'from=(?P<from_uri>\S+)\s+'
+    r'ua=(?P<user_agent>.*?)\s+'
+    r'ci=(?P<call_id>\S+)'
 )
 
 logging.basicConfig(
@@ -74,6 +80,17 @@ INSERT_SQL = """
          %(contact)s, %(user_agent)s, %(call_id)s, %(status)s,
          %(latitude)s, %(longitude)s, %(country)s, %(city)s,
          %(asn_number)s, %(asn_org)s, %(auth_username)s, %(auth_credentials)s)
+"""
+
+UPDATE_AUTH_SQL = """
+    UPDATE sip_events SET
+        auth_username      = %(auth_username)s,
+        auth_credentials   = %(auth_credentials)s,
+        user_agent         = %(user_agent)s,
+        from_uri           = %(from_uri)s
+    WHERE call_id = %(call_id)s
+      AND auth_username IS NULL
+      AND ts > NOW() - INTERVAL '5 minutes'
 """
 
 def connect():
@@ -171,10 +188,19 @@ def parse_line(line, geo_reader, asn_reader):
         if m:
             d = m.groupdict()
             row.update({'src_ip': d['src_ip'], 'user_agent': d['user_agent'],
-                        'from_uri': d['from_uri'], 'method': 'REGISTER'})
+                        'from_uri': d['from_uri'], 'call_id': d['call_id'], 'method': 'REGISTER'})
             auth_username, auth_credentials = parse_auth_header(d['auth_hdr'])
             row['auth_username'] = auth_username
             row['auth_credentials'] = auth_credentials
+            row['_is_auth_attempt'] = True
+            matched = True
+    elif 'REGCHALLENGE' in line:
+        m = RE_REGCHALLENGE.search(line)
+        if m:
+            d = m.groupdict()
+            row.update({'src_ip': d['src_ip'], 'src_port': int(d['src_port']),
+                        'from_uri': d['from_uri'], 'user_agent': d['user_agent'],
+                        'call_id': d['call_id'], 'method': 'REGISTER'})
             matched = True
     elif 'SIPREQ' in line:
         m = RE_SIPREQ.search(line)
@@ -224,9 +250,27 @@ def main():
             if not batch:
                 return
             try:
-                psycopg2.extras.execute_batch(cur, INSERT_SQL, batch)
+                auth_attempts = []
+                other_inserts = []
+                for row in batch:
+                    if row.get('_is_auth_attempt') and row.get('call_id'):
+                        auth_attempts.append(row)
+                    else:
+                        other_inserts.append(row)
+
+                if other_inserts:
+                    psycopg2.extras.execute_batch(cur, INSERT_SQL, other_inserts)
+
+                late_inserts = []
+                for row in auth_attempts:
+                    cur.execute(UPDATE_AUTH_SQL, row)
+                    if cur.rowcount == 0:
+                        late_inserts.append(row)
+                if late_inserts:
+                    psycopg2.extras.execute_batch(cur, INSERT_SQL, late_inserts)
+
                 conn.commit()
-                log.info(f"Insertados {len(batch)} eventos")
+                log.info(f"Procesados {len(batch)} eventos")
             except Exception as e:
                 log.error(f"flush error: {e}")
                 conn.rollback()
